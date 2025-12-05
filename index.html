@@ -11,6 +11,7 @@
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        /* Estilos mantidos iguais... */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; line-height: 1.6; padding: 20px; }
         .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 25px; }
@@ -149,6 +150,7 @@
                     <p>Bem-vindo, <span id="user-name">Usuário</span>!</p>
                 </div>
                 <div>
+                    <!-- Botão Debug adicionado -->
                     <button id="btn-debug" class="btn" style="background:#6c757d; color:white; margin-right:10px;">
                         <i class="fas fa-bug"></i> Debug
                     </button>
@@ -444,7 +446,7 @@
         </div>
     </div>
 
-    <!-- Script JavaScript Corrigido -->
+    <!-- Script JavaScript com Firebase Corrigido -->
     <script>
         // CONFIGURAÇÃO DO FIREBASE
         const firebaseConfig = {
@@ -457,11 +459,10 @@
         };
 
         // Inicializar Firebase
-        const app = firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        const auth = firebase.auth();
-
-        // Configurações iniciais
+        firebase.initializeApp(firebaseConfig);
+        
+        // Declarar variáveis globais
+        let db, auth;
         let transacoes = [];
         let metaEconomia = 0;
         let configAlertas = {
@@ -473,12 +474,6 @@
         let usuarioAtual = null;
         let usandoFirebase = true;
 
-        // Ativar persistência offline
-        db.enablePersistence()
-            .catch((err) => {
-                console.log("Persistência não suportada:", err);
-            });
-
         // Inicialização
         document.addEventListener('DOMContentLoaded', function() {
             inicializarFirebase();
@@ -488,27 +483,27 @@
         function inicializarFirebase() {
             console.log("Firebase inicializado...");
             
+            // Obter instâncias
+            db = firebase.firestore();
+            auth = firebase.auth();
+            
             // Monitorar estado de autenticação
             auth.onAuthStateChanged((user) => {
                 console.log("Estado de autenticação alterado:", user ? "Usuário logado" : "Usuário não logado");
-                
                 if (user) {
                     usuarioAtual = user;
                     console.log("Usuário atual:", user.email, "UID:", user.uid);
-                    
                     mostrarApp();
                     
-                    // Criar/verificar estrutura do usuário
+                    // CRIAR ESTRUTURA PARA O USUÁRIO SE NÃO EXISTIR
                     criarEstruturaUsuario(user.uid, user.displayName || user.email.split('@')[0])
                         .then(() => {
-                            console.log("Estrutura do usuário verificada/criada");
                             carregarDadosFirebase();
                             atualizarStatusFirebase(true);
                             testarConexaoFirebase();
                         })
-                        .catch((error) => {
+                        .catch(error => {
                             console.error("Erro ao criar estrutura:", error);
-                            mostrarNotificacao("Usando modo offline", "warning");
                             usarDadosLocais();
                         });
                 } else {
@@ -518,55 +513,40 @@
             });
         }
 
+        // FUNÇÃO PARA CRIAR ESTRUTURA DO USUÁRIO
         function criarEstruturaUsuario(uid, nomeUsuario) {
             console.log("Criando/verificando estrutura para usuário:", uid);
             
-            return new Promise((resolve, reject) => {
-                const userDocRef = db.collection('usuarios').doc(uid);
-                
-                userDocRef.get()
-                    .then((doc) => {
-                        if (!doc.exists) {
-                            console.log("Criando novo documento para usuário:", uid);
-                            // Criar documento do usuário
-                            return userDocRef.set({
-                                nome: nomeUsuario,
-                                email: usuarioAtual.email,
-                                dataCriacao: firebase.firestore.FieldValue.serverTimestamp(),
-                                ultimoAcesso: firebase.firestore.FieldValue.serverTimestamp()
-                            }).then(() => {
-                                console.log("Documento do usuário criado com sucesso");
-                                
-                                // Criar configurações padrão
-                                const batch = db.batch();
-                                
-                                // Configurações de alertas
-                                const alertasRef = db.collection('usuarios').doc(uid).collection('configuracoes').doc('alertas');
-                                batch.set(alertasRef, configAlertas);
-                                
-                                // Configurações de meta
-                                const metaRef = db.collection('usuarios').doc(uid).collection('configuracoes').doc('meta');
-                                batch.set(metaRef, { valor: 0 });
-                                
-                                return batch.commit();
-                            });
-                        } else {
-                            console.log("Usuário já existe, atualizando último acesso");
-                            // Atualizar último acesso
-                            return userDocRef.update({
-                                ultimoAcesso: firebase.firestore.FieldValue.serverTimestamp()
-                            });
-                        }
-                    })
-                    .then(() => {
-                        console.log("Estrutura do usuário criada/verificada com sucesso");
-                        resolve();
-                    })
-                    .catch((error) => {
-                        console.error("Erro ao criar estrutura do usuário:", error);
-                        reject(error);
-                    });
-            });
+            // Verificar se o documento do usuário já existe
+            return db.collection('usuarios').doc(uid).get()
+                .then((doc) => {
+                    if (!doc.exists) {
+                        // Criar documento do usuário com informações básicas
+                        return db.collection('usuarios').doc(uid).set({
+                            nome: nomeUsuario,
+                            email: usuarioAtual.email,
+                            dataCriacao: firebase.firestore.FieldValue.serverTimestamp(),
+                            ultimoAcesso: firebase.firestore.FieldValue.serverTimestamp()
+                        }).then(() => {
+                            console.log("Documento do usuário criado com sucesso");
+                            
+                            // Criar configurações padrão para o novo usuário
+                            const batch = db.batch();
+                            const alertasRef = db.collection('usuarios').doc(uid).collection('configuracoes').doc('alertas');
+                            const metaRef = db.collection('usuarios').doc(uid).collection('configuracoes').doc('meta');
+                            
+                            batch.set(alertasRef, configAlertas);
+                            batch.set(metaRef, { valor: 0 });
+                            
+                            return batch.commit();
+                        });
+                    } else {
+                        // Atualizar último acesso
+                        return db.collection('usuarios').doc(uid).update({
+                            ultimoAcesso: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                });
         }
 
         function configurarEventListeners() {
@@ -607,9 +587,11 @@
                 console.log("Usuário:", usuarioAtual);
                 console.log("Transações:", transacoes.length);
                 console.log("Usando Firebase:", usandoFirebase);
+                console.log("Firebase App:", firebase.app().name);
+                console.log("=================");
                 
+                // Testar escrita simples
                 if (usuarioAtual) {
-                    // Testar escrita
                     db.collection('teste').doc('debug_' + usuarioAtual.uid).set({
                         timestamp: new Date().toISOString(),
                         usuario: usuarioAtual.email,
@@ -712,34 +694,27 @@
             document.getElementById('btn-redefinir-senha').addEventListener('click', redefinirSenhaPorEmail);
         }
 
+        // FUNÇÃO PARA TESTAR CONEXÃO
         function testarConexaoFirebase() {
-            if (!usuarioAtual) {
-                console.log("Usuário não autenticado, pulando teste de conexão");
-                return;
-            }
-            
-            const testRef = db.collection('teste_conexao').doc('conexao_' + usuarioAtual.uid);
+            const testRef = db.collection('teste').doc('conexao_' + usuarioAtual.uid);
             
             testRef.set({
                 teste: new Date().toISOString(),
                 status: 'conexao_ok',
-                usuario: usuarioAtual.email,
-                uid: usuarioAtual.uid
+                usuario: usuarioAtual.uid
             })
             .then(() => {
                 console.log("Conexão com Firebase OK para usuário:", usuarioAtual.uid);
                 mostrarNotificacao("Firebase conectado com sucesso!", "success");
-                usandoFirebase = true;
-                atualizarStatusFirebase(true);
             })
             .catch(error => {
                 console.error("Erro na conexão Firebase:", error);
                 mostrarNotificacao("Erro no Firebase: " + error.message, "error");
                 usandoFirebase = false;
-                atualizarStatusFirebase(false);
             });
         }
 
+        // FUNÇÃO PARA ABRIR MODAL DE PERFIL
         function abrirModalPerfil() {
             if (usuarioAtual) {
                 document.getElementById('perfil-nome').value = usuarioAtual.displayName || '';
@@ -748,6 +723,7 @@
             }
         }
 
+        // FUNÇÃO PARA SALVAR PERFIL
         function salvarPerfil() {
             const nome = document.getElementById('perfil-nome').value.trim();
             const senhaAtual = document.getElementById('perfil-senha-atual').value;
@@ -821,6 +797,7 @@
                 });
         }
 
+        // FUNÇÃO PARA REDEFINIR SENHA POR E-MAIL
         function redefinirSenhaPorEmail() {
             if (!usuarioAtual || !usuarioAtual.email) {
                 mostrarNotificacao("Usuário não autenticado!", "error");
@@ -840,6 +817,7 @@
                 });
         }
 
+        // FUNÇÕES DE AUTENTICAÇÃO
         function fazerLogin() {
             const email = document.getElementById('login-email').value;
             const senha = document.getElementById('login-password').value;
@@ -848,32 +826,11 @@
             
             auth.signInWithEmailAndPassword(email, senha)
                 .then((userCredential) => {
-                    console.log("Login bem-sucedido:", userCredential.user.uid);
                     mostrarNotificacao("Login realizado com sucesso!", "success");
                     mostrarLoading(false);
                 })
                 .catch((error) => {
-                    console.error("Erro no login:", error);
-                    let mensagemErro = "Erro no login: ";
-                    
-                    switch(error.code) {
-                        case 'auth/user-not-found':
-                            mensagemErro += "Usuário não encontrado";
-                            break;
-                        case 'auth/wrong-password':
-                            mensagemErro += "Senha incorreta";
-                            break;
-                        case 'auth/invalid-email':
-                            mensagemErro += "E-mail inválido";
-                            break;
-                        case 'auth/too-many-requests':
-                            mensagemErro += "Muitas tentativas. Tente mais tarde";
-                            break;
-                        default:
-                            mensagemErro += error.message;
-                    }
-                    
-                    mostrarNotificacao(mensagemErro, "error");
+                    mostrarNotificacao("Erro no login: " + error.message, "error");
                     mostrarLoading(false);
                 });
         }
@@ -906,38 +863,15 @@
                     mostrarNotificacao("Conta criada com sucesso!", "success");
                     document.getElementById('cadastro-container').style.display = 'none';
                     document.getElementById('login-container').style.display = 'block';
-                    
-                    // Limpar formulário
-                    document.getElementById('cadastro-form').reset();
-                    
                     mostrarLoading(false);
                 })
                 .catch((error) => {
-                    console.error("Erro ao criar conta:", error);
-                    let mensagemErro = "Erro ao criar conta: ";
-                    
-                    switch(error.code) {
-                        case 'auth/email-already-in-use':
-                            mensagemErro += "E-mail já está em uso";
-                            break;
-                        case 'auth/invalid-email':
-                            mensagemErro += "E-mail inválido";
-                            break;
-                        case 'auth/operation-not-allowed':
-                            mensagemErro += "Operação não permitida";
-                            break;
-                        case 'auth/weak-password':
-                            mensagemErro += "Senha muito fraca";
-                            break;
-                        default:
-                            mensagemErro += error.message;
-                    }
-                    
-                    mostrarNotificacao(mensagemErro, "error");
+                    mostrarNotificacao("Erro ao criar conta: " + error.message, "error");
                     mostrarLoading(false);
                 });
         }
 
+        // FUNÇÕES DO FIREBASE CORRIGIDAS
         function carregarDadosFirebase() {
             mostrarLoading(true);
             
@@ -949,7 +883,7 @@
             
             console.log("Carregando dados do Firebase para usuário:", usuarioAtual.uid);
             
-            // Carregar transações do Firebase
+            // Carregar transações do Firebase - AGORA PARA O USUÁRIO ESPECÍFICO
             db.collection('usuarios').doc(usuarioAtual.uid).collection('transacoes')
                 .orderBy('dataCriacao', 'desc')
                 .get()
@@ -966,7 +900,7 @@
                     
                     console.log("Transações carregadas:", transacoes.length);
                     
-                    // Carregar configurações
+                    // Carregar configurações - AGORA PARA O USUÁRIO ESPECÍFICO
                     return db.collection('usuarios').doc(usuarioAtual.uid).collection('configuracoes').doc('alertas').get();
                 })
                 .then((doc) => {
@@ -981,7 +915,7 @@
                     }
                 })
                 .then(() => {
-                    // Carregar meta
+                    // Carregar meta - AGORA PARA O USUÁRIO ESPECÍFICO
                     return db.collection('usuarios').doc(usuarioAtual.uid).collection('configuracoes').doc('meta').get();
                 })
                 .then((doc) => {
@@ -1031,7 +965,7 @@
             console.log("Tentando salvar no Firebase para usuário:", usuarioAtual.uid);
             
             if (transacao.firebaseId) {
-                // Atualizar transação existente
+                // Atualizar transação existente - NA COLEÇÃO DO USUÁRIO
                 return db.collection('usuarios').doc(usuarioAtual.uid).collection('transacoes')
                     .doc(transacao.firebaseId)
                     .update(transacaoData)
@@ -1040,7 +974,7 @@
                         return transacao.firebaseId;
                     });
             } else {
-                // Criar nova transação
+                // Criar nova transação - NA COLEÇÃO DO USUÁRIO
                 return db.collection('usuarios').doc(usuarioAtual.uid).collection('transacoes')
                     .add(transacaoData)
                     .then((docRef) => {
@@ -1154,6 +1088,8 @@
             };
             
             console.log("Transação a ser salva:", transacao);
+            console.log("Usuário atual:", usuarioAtual);
+            console.log("Usando Firebase?", usandoFirebase);
             
             mostrarLoading(true);
             
